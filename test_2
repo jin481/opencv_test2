@@ -10,6 +10,9 @@ Rect clearrect(500, 200, (500 / 3.0), 100);
 Rect runrect(500, 300, (500 / 3.0), 100);
 Rect exitrect(500, 400, (500 / 3.0), 100);
 Rect contourrect(500 + (500 / 3.0), 0, (500 / 3.0), 100);
+Rect recognizerect(500 + (500 / 3.0), 100, (500 / 3.0), 100);
+Rect centerrect(500 + (500 / 3.0), 200, (500 / 3.0), 100);
+Rect digitrect(500 + (500 / 3.0), 300, (500 / 3.0), 100);
 void onMouse(int event, int x, int y, int flags, void*);
 void Save();
 void Load();
@@ -17,7 +20,29 @@ void Clear();
 void Run();
 void Exit();
 void contour();
-int predictDigit(const Mat& image);
+void recognizeDigits();
+void findCenters();
+void recognizeSingleDigit() {
+	Mat gray, binary;
+	cvtColor(img(Rect(1, 1, 490, 490)), gray, COLOR_BGR2GRAY);
+	threshold(gray, binary, 150, 255, THRESH_BINARY_INV);
+	vector<vector<Point>> contours;
+	findContours(binary, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+	for (size_t i = 0; i < contours.size(); ++i) {
+		Rect boundRect = boundingRect(contours[i]);
+		float aspectRatio = static_cast<float>(boundRect.width) / boundRect.height;
+
+		if (aspectRatio >= 0.1 && aspectRatio <= 0.4 && boundRect.height > 10 && boundRect.height > boundRect.width) {
+			cout << "인식 결과: 1" << endl;
+			return;
+		}
+		if (aspectRatio >= 0.3 && aspectRatio <= 0.8 && boundRect.height > 10 && boundRect.height > boundRect.width) {
+			cout << "인식 결과: 1" << endl;
+			return;
+		}
+	}
+	cout << "인식된 숫자가 없습니다." << endl;
+}
 int main() {
 	line(img, Point(500, 0), Point(500, 500), Scalar(0), 2);
 	line(img, Point(500 + (500 / 3.0), 0), Point(500 + (500 / 3.0), 500), Scalar(0), 2);
@@ -32,6 +57,9 @@ int main() {
 	putText(img, "Run", Point(530, 360), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0), 3);
 	putText(img, "Exit", Point(530, 460), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0), 3);
 	putText(img, "contour", Point(680, 60), FONT_HERSHEY_SIMPLEX, 1.2, Scalar(0), 3);
+	putText(img, "recong", Point(680, 160), FONT_HERSHEY_SIMPLEX, 1.2, Scalar(0), 3);
+	putText(img, "center", Point(680, 260), FONT_HERSHEY_SIMPLEX, 1.2, Scalar(0), 3);
+	putText(img, "digit", Point(680, 360), FONT_HERSHEY_SIMPLEX, 1.2, Scalar(0), 3);
 
 	namedWindow("img");
 	setMouseCallback("img", onMouse);
@@ -58,6 +86,12 @@ void onMouse(int event, int x, int y, int flags, void*) {
 				Exit();
 			else if (contourrect.contains(clickPoint))
 				contour();
+			else if (recognizerect.contains(clickPoint))
+				recognizeDigits();
+			else if (centerrect.contains(clickPoint))
+				findCenters();
+			else if (digitrect.contains(clickPoint))
+				recognizeSingleDigit();
 		}
 	}
 	else if (event == EVENT_LBUTTONUP)
@@ -74,7 +108,7 @@ void Save() {
 	string fileName;
 	cout << "파일명 입력: ";
 	cin >> fileName;
-	imwrite(fileName, img(Rect(0, 0, 490, 490)));
+	imwrite(fileName, img(Rect(0, 0, 500, 500)));
 	cout << fileName + " 파일이 저장됨" << endl;
 }
 void Load() {
@@ -83,7 +117,7 @@ void Load() {
 	cin >> fileName;
 	Mat src = imread(fileName);
 	if (!src.empty()) {
-		src.copyTo(img(Rect(0, 0, 490, 490)));
+		src.copyTo(img(Rect(0, 0, 500, 500)));
 		imshow("img", img);
 		cout << fileName + " 파일을 불러옴" << endl;
 	}
@@ -101,12 +135,50 @@ void Clear() {
 	cout << "입력창 삭제됨" << endl;
 }
 void Run() {
-	Mat gray, resized;
+	Mat gray, binary;
 	cvtColor(img(Rect(1, 1, 490, 490)), gray, COLOR_BGR2GRAY);
-	resize(gray, resized, Size(28, 28));
-	int result = predictDigit(resized);
-	cout << "인식결과: " << result << endl;
+	threshold(gray, binary, 100, 255, THRESH_BINARY_INV);
+	vector<vector<Point>> contours;
+	findContours(binary, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+
+	Mat drawing = Mat::zeros(binary.size(), CV_8UC3);
+	int boundingBoxCount = 0; // 바운딩 박스 개수를 세기 위한 변수
+	vector<Rect> boundingBoxes;
+
+	for (size_t i = 0; i < contours.size(); i++) {
+		Rect boundRect = boundingRect(contours[i]);
+		rectangle(drawing, boundRect.tl(), boundRect.br(), Scalar(255, 255, 255), 2); // 바운딩 박스를 그립니다.
+		boundingBoxes.push_back(boundRect);
+		boundingBoxCount++;
+	}
+	vector<Point2f> centers;
+	for (size_t i = 0; i < contours.size(); i++) {
+		Rect boundRect = boundingRect(contours[i]);
+		Point2f center((boundRect.tl().x + boundRect.br().x) / 2.0, (boundRect.tl().y + boundRect.br().y) / 2.0);
+		centers.push_back(center);
+	}
+	Rect firstBox = boundingBoxes[0];
+	Rect secondBox = boundingBoxes[1];
+	int centerY1 = (firstBox.tl().y + firstBox.br().y) / 2;
+	int centerY2 = (secondBox.tl().y + secondBox.br().y) / 2;
+	if (boundingBoxCount == 3)
+		cout << "인식 결과: 8" << endl;
+	else if (boundingBoxCount == 2) {
+		if (centerY1 > centerY2)
+			cout << "인식 결과: 6" << endl;
+		else if (centerY1 < centerY2)
+			cout << "인식 결과: 9" << endl;
+		else if (abs(centerY1 - centerY2) < 30)
+			cout << "인식 결과: 0" << endl;
+	}
+	for (int i = 0; i < boundingBoxes.size(); ++i) {
+		Rect box = boundingBoxes[i];
+		cout << "바운딩 박스 " << i + 1 << ": (x=" << box.x << ", y=" << box.y << "), width=" << box.width << ", height=" << box.height << endl;
+	}
+	cout << endl;
+	cout << centerY1 << " " << centerY2 << endl;
 }
+
 void Exit() {
 	cout << "프로그램 종료" << endl;
 	destroyAllWindows();
@@ -121,6 +193,46 @@ void contour() {
 	int contourCount = contours.size();
 	cout << "외곽선의 개수: " << contourCount << "개" << endl;
 }
-int predictDigit(const Mat& image) {
-	return rand() % 10;
+void recognizeDigits() {
+	Mat gray, binary;
+	cvtColor(img(Rect(1, 1, 490, 490)), gray, COLOR_BGR2GRAY);
+	threshold(gray, binary, 100, 255, THRESH_BINARY_INV);
+	vector<vector<Point>> contours;
+	findContours(binary, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+
+	Mat drawing = Mat::zeros(binary.size(), CV_8UC3);
+	for (size_t i = 0; i < contours.size(); i++) {
+		Rect boundRect = boundingRect(contours[i]);
+		rectangle(binary, boundRect.tl(), boundRect.br(), Scalar(255), 2); // 바운딩 박스를 이진화된 이미지에 그립니다.
+	}
+
+	imshow("img", binary);
+}
+
+void findCenters() {
+	Mat gray, binary;
+	cvtColor(img(Rect(1, 1, 490, 490)), gray, COLOR_BGR2GRAY);
+	threshold(gray, binary, 100, 255, THRESH_BINARY_INV);
+	vector<vector<Point>> contours;
+	findContours(binary, contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+
+	Mat drawing = Mat::zeros(binary.size(), CV_8UC3);
+	vector<Point2f> centers;
+	for (size_t i = 0; i < contours.size(); i++) {
+		Rect boundRect = boundingRect(contours[i]);
+		rectangle(drawing, boundRect.tl(), boundRect.br(), Scalar(255, 255, 255), 2); // 바운딩 박스를 그립니다.
+
+		Point2f center((boundRect.tl().x + boundRect.br().x) / 2.0, (boundRect.tl().y + boundRect.br().y) / 2.0);
+		centers.push_back(center);
+
+		// 십자선을 그립니다.
+		line(drawing, Point(center.x, boundRect.tl().y), Point(center.x, boundRect.br().y), Scalar(0, 0, 255), 1);
+		line(drawing, Point(boundRect.tl().x, center.y), Point(boundRect.br().x, center.y), Scalar(0, 0, 255), 1);
+	}
+
+	imshow("img", drawing);
+	cout << "각 숫자 영역의 중심 좌표:" << endl;
+	for (const auto& center : centers) {
+		cout << "(" << center.x << ", " << center.y << ")" << endl;
+	}
 }*/
